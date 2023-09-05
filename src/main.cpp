@@ -1,289 +1,95 @@
-#include <SDL.h>
-#include <vector>
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include <filesystem>
-#include "fragment.h"
-#include "uniform.h"
-#include <array>
-#include <fstream>
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_events.h>
+#include <iostream>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <sstream>
-
-#include "print.h"
-#include "color.h"
-#include "shaders.h"
-#include "triangle.h"
-#include <cstdint>
 #include <vector>
-#include <fstream>
-#include <thread>
-#include <mutex>
+#include <cassert>
+#include "color.h"
+#include "print.h"
+#include "framebuffer.h"
+#include "uniforms.h"
+#include "shaders.h"
+#include "fragment.h"
+#include "triangle.h"
+#include "camera.h"
+#include "ObjLoader.h"
+#include "noise.h"
 
 
-const int WINDOW_WIDTH = 700;
-const int WINDOW_HEIGHT = 700;
+SDL_Window* window = nullptr;
+SDL_Renderer* renderer = nullptr;
+Color currentColor;
 
-
-
-std::array<std::array<float, WINDOW_WIDTH>, WINDOW_HEIGHT> zbuffer;
-
-
-void writeBMP(const std::string& filename) {
-    int width = WINDOW_WIDTH;
-    int height = WINDOW_HEIGHT;
-
-    std::string fileopen = "./" + filename;
-
-    float zMin = std::numeric_limits<float>::max();
-    float zMax = std::numeric_limits<float>::lowest();
-
-    for (const auto& row : zbuffer) {
-        for (const auto& val : row) {
-            if (val != 99999.0f) { // Ignora los valores que no han sido actualizados
-                zMin = std::min(zMin, val);
-                zMax = std::max(zMax, val);
-            }
-        }
+bool init() {
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        std::cerr << "Error: Failed to initialize SDL: " << SDL_GetError() << std::endl;
+        return false;
     }
 
-// Verifica que zMin y zMax sean diferentes
-    if (zMin == zMax) {
-        std::cerr << "zMin y zMax son iguales. Esto producirá una imagen en blanco o negro.\n";
-        return;
+    window = SDL_CreateWindow("Software Renderer", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH, SCREEN_HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) {
+        std::cerr << "Error: Failed to create SDL window: " << SDL_GetError() << std::endl;
+        return false;
     }
 
-    std::cout << "zMin: " << zMin << ", zMax: " << zMax << "\n";
-
-
-    // Abre el archivo en modo binario
-    std::ofstream file(fileopen, std::ios::binary);
-    if (!file) {
-        std::cerr << "No se pudo abrir el archivo para escribir: " << fileopen << "\n";
-        return;
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        std::cerr << "Error: Failed to create SDL renderer: " << SDL_GetError() << std::endl;
+        return false;
     }
 
-    // Escribe la cabecera del archivo BMP
-    uint32_t fileSize = 54 + 3 * width * height;
-    uint32_t dataOffset = 54;
-    uint32_t imageSize = 3 * width * height;
-    uint32_t biPlanes = 1;
-    uint32_t biBitCount = 24;
+    setupNoise();
 
-    uint8_t header[54] = {'B', 'M',
-                          static_cast<uint8_t>(fileSize & 0xFF), static_cast<uint8_t>((fileSize >> 8) & 0xFF), static_cast<uint8_t>((fileSize >> 16) & 0xFF), static_cast<uint8_t>((fileSize >> 24) & 0xFF),
-                          0, 0, 0, 0,
-                          static_cast<uint8_t>(dataOffset & 0xFF), static_cast<uint8_t>((dataOffset >> 8) & 0xFF), static_cast<uint8_t>((dataOffset >> 16) & 0xFF), static_cast<uint8_t>((dataOffset >> 24) & 0xFF),
-                          40, 0, 0, 0,
-                          static_cast<uint8_t>(width & 0xFF), static_cast<uint8_t>((width >> 8) & 0xFF), static_cast<uint8_t>((width >> 16) & 0xFF), static_cast<uint8_t>((width >> 24) & 0xFF),
-                          static_cast<uint8_t>(height & 0xFF), static_cast<uint8_t>((height >> 8) & 0xFF), static_cast<uint8_t>((height >> 16) & 0xFF), static_cast<uint8_t>((height >> 24) & 0xFF),
-                          static_cast<uint8_t>(biPlanes & 0xFF), static_cast<uint8_t>((biPlanes >> 8) & 0xFF),
-                          static_cast<uint8_t>(biBitCount & 0xFF), static_cast<uint8_t>((biBitCount >> 8) & 0xFF)};
-
-    file.write(reinterpret_cast<char*>(header), sizeof(header));
-
-    // Escribe los datos de los píxeles
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            float normalized = (zbuffer[y][x] - zMin) / (zMax - zMin);
-            uint8_t color = static_cast<uint8_t>(normalized * 255);
-            file.write(reinterpret_cast<char*>(&color), 1);
-            file.write(reinterpret_cast<char*>(&color), 1);
-            file.write(reinterpret_cast<char*>(&color), 1);
-        }
-    }
-
-    file.close();
+    return true;
 }
 
-SDL_Renderer* renderer;
-
-Uniform uniform;
-
-struct Face {
-    std::vector<std::array<int, 3>> vertexIndices;
-};
-
-std::string getCurrentPath() {
-    return std::filesystem::current_path().string();
+void setColor(const Color& color) {
+    currentColor = color;
 }
 
-
-std::vector<glm::vec3> vertices;
-std::vector<Face> faces;
-
-// Declare a global clearColor of type Color
-Color clearColor = {0, 0, 0}; // Initially set to black
-
-// Declare a global currentColor of type Color
-Color currentColor = {255, 255, 255}; // Initially set to white
-
-// Function to clear the framebuffer with the clearColor
-void clear() {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-    SDL_RenderClear(renderer);
-
-    for (auto &row : zbuffer) {
-        std::fill(row.begin(), row.end(), 99999.0f);
-    }
-}
-
-// Function to set a specific pixel in the framebuffer to the currentColor
-void point(Fragment f) {
-    if (f.position.y < WINDOW_HEIGHT && f.position.x < WINDOW_WIDTH && f.position.y > 0 && f.position.x > 0 && f.position.z < zbuffer[f.position.y][f.position.x]) {
-        SDL_SetRenderDrawColor(renderer, f.color.r, f.color.g, f.color.b, f.color.a);
-        SDL_RenderDrawPoint(renderer, f.position.x, f.position.y);
-        zbuffer[f.position.y][f.position.x] = f.position.z;
-    }
-}
-
-std::vector<std::vector<Vertex>> primitiveAssembly(
-        const std::vector<Vertex>& transformedVertices
-) {
-    std::vector<std::vector<Vertex>> groupedVertices;
-
-    for (int i = 0; i < transformedVertices.size(); i += 3) {
-        std::vector<Vertex> vertexGroup;
-        vertexGroup.push_back(transformedVertices[i]);
-        vertexGroup.push_back(transformedVertices[i+1]);
-        vertexGroup.push_back(transformedVertices[i+2]);
-
-        groupedVertices.push_back(vertexGroup);
-    }
-
-    return groupedVertices;
-}
-
-
-void render(std::vector<glm::vec3> VBO) {
+void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms) {
     // 1. Vertex Shader
-    // vertex -> trasnformedVertices
-
-    std::vector<Vertex> transformedVertices;
-
-    for (int i = 0; i < VBO.size(); i++) {
-        glm::vec3 v = VBO[i];
-
-        Vertex vertex = {v, Color(255, 255, 255)};
-        Vertex transformedVertex = vertexShader(vertex, uniform);
-        transformedVertices.push_back(transformedVertex);
+    std::vector<Vertex> transformedVertices(VBO.size() / 3);
+    for (size_t i = 0; i < VBO.size() / 3; ++i) {
+        Vertex vertex = { VBO[i * 3], VBO[i * 3 + 1], VBO[i * 3 + 2] };
+        transformedVertices[i] = vertexShader(vertex, uniforms);
     }
-
-    /*
-     // Imprimir los vertices transformados
-    for (Vertex v : transformedVertices) {
-        print(v.position);
-    }
-     */
-
 
     // 2. Primitive Assembly
-    // transformedVertices -> triangles
-    std::vector<std::vector<Vertex>> triangles = primitiveAssembly(transformedVertices);
-
-    /*
-     // Imprimir los triangulos
-    for (std::vector<Vertex> triangleVertices : triangles) {
-        for (Vertex v : triangleVertices) {
-            print(v.position);
-        }
+    std::vector<std::vector<Vertex>> assembledVertices(transformedVertices.size() / 3);
+    for (size_t i = 0; i < transformedVertices.size() / 3; ++i) {
+        Vertex edge1 = transformedVertices[3 * i];
+        Vertex edge2 = transformedVertices[3 * i + 1];
+        Vertex edge3 = transformedVertices[3 * i + 2];
+        assembledVertices[i] = { edge1, edge2, edge3 };
     }
-     */
 
-    // 3. Rasterize
-    // triangles -> Fragments
+    // 3. Rasterization
     std::vector<Fragment> fragments;
-    for (const std::vector<Vertex>& triangleVertices : triangles) {
+
+    for (size_t i = 0; i < assembledVertices.size(); ++i) {
         std::vector<Fragment> rasterizedTriangle = triangle(
-                triangleVertices[0],
-                triangleVertices[1],
-                triangleVertices[2]
+                assembledVertices[i][0],
+                assembledVertices[i][1],
+                assembledVertices[i][2]
         );
-
-        fragments.insert(
-                fragments.end(),
-                rasterizedTriangle.begin(),
-                rasterizedTriangle.end()
-        );
+        fragments.insert(fragments.end(), rasterizedTriangle.begin(), rasterizedTriangle.end());
     }
-
 
     // 4. Fragment Shader
-    // Fragments -> colors
-
-    for (Fragment fragment : fragments) {
-        point(fragmentShader(fragment));
-    }
-
-    // Define the number of threads to use (this can be adjusted based on the hardware)
-    const size_t numThreads = std::thread::hardware_concurrency();
-
-    // Define a mutex to ensure safe access to shared resources
-    std::mutex mtx;
-
-    // Function to process a subset of fragments with the fragment shader
-    auto processFragments = [&](size_t startIdx, size_t endIdx) {
-        for (size_t i = startIdx; i < endIdx; ++i) {
-            Fragment fragment = fragments[i];
-            Fragment shadedFragment = fragmentShader(fragment);
-
-            // Ensure thread-safe access to the point function
-            mtx.lock();
-            point(shadedFragment);
-            mtx.unlock();
-        }
-    };
-
-    // Create and launch multiple threads
-    std::vector<std::thread> threads;
-    size_t fragmentsPerThread = fragments.size() / numThreads;
-    for (size_t t = 0; t < numThreads; ++t) {
-        size_t startIdx = t * fragmentsPerThread;
-        size_t endIdx = (t == numThreads - 1) ? fragments.size() : startIdx + fragmentsPerThread;
-        threads.emplace_back(processFragments, startIdx, endIdx);
-    }
-
-    // Wait for all threads to complete
-    for (std::thread &th : threads) {
-        th.join();
+    for (size_t i = 0; i < fragments.size(); ++i) {
+        const Fragment& fragment = fragmentShader(fragments[i]);
+        point(fragment);
     }
 }
 
-
-float a = 3.14f / 3.0f;
-float b = 0.81f ;
-glm::mat4 createModelMatrix() {
-    glm::mat4 transtation = glm::translate(glm::mat4(1), glm::vec3(0.2f, -0.09f, 0));
-    glm::mat4 rotationy = glm::rotate(glm::mat4(1), glm::radians(a++), glm::vec3(0, 4, 0));
-    glm::mat4 rotationx = glm::rotate(glm::mat4(1), glm::radians(b+=0.1f), glm::vec3(1, 0, 0));
-    glm::mat4 scale = glm::scale(glm::mat4(1), glm::vec3(0.9f, 0.9f, 0.9f));
-    return transtation * scale * rotationx * rotationy;
-}
-
-glm::mat4 createViewMatrix() {
-    return glm::lookAt(
-            // donde esta
-            glm::vec3(0, 0, -2),
-            // hacia adonde mira
-            glm::vec3(0, 0, 0),
-            // arriba
-            glm::vec3(0, 1, 0)
-    );
-}
-
-glm::mat4 createProjectionMatrix() {
-    float fovInDegrees = 45.0f;
-    float aspectRatio = WINDOW_WIDTH / WINDOW_HEIGHT;
-    float nearClip = 0.1f;
-    float farClip = 100.0f;
-
-    return glm::perspective(glm::radians(fovInDegrees), aspectRatio, nearClip, farClip);
-}
-
-glm::mat4 createViewportMatrix() {
+glm::mat4 createViewportMatrix(size_t screenWidth, size_t screenHeight) {
     glm::mat4 viewport = glm::mat4(1.0f);
 
     // Scale
-    viewport = glm::scale(viewport, glm::vec3(WINDOW_WIDTH / 2.0f, WINDOW_HEIGHT / 2.0f, 0.5f));
+    viewport = glm::scale(viewport, glm::vec3(screenWidth / 2.0f, screenHeight / 2.0f, 0.5f));
 
     // Translate
     viewport = glm::translate(viewport, glm::vec3(1.0f, 1.0f, 0.5f));
@@ -291,150 +97,129 @@ glm::mat4 createViewportMatrix() {
     return viewport;
 }
 
-// Función para leer el archivo .obj y cargar los vértices y caras
-bool loadOBJ(const std::string& path, std::vector<glm::vec3>& out_vertices, std::vector<Face>& out_faces) {
-    out_vertices.clear();
-    out_faces.clear();
-
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "Error: Unable to open file " << path << std::endl;
-        return false;
+int main(int argc, char* argv[]) {
+    if (!init()) {
+        return 1;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        std::istringstream iss(line);
-        std::string type;
-        iss >> type;
+    std::vector<glm::vec3> vertices;
+    std::vector<glm::vec3> normals;
+    std::vector<glm::vec3> texCoords;
+    std::vector<Face> faces;
+    std::vector<glm::vec3> vertexBufferObject; // This will contain both vertices and normals
 
-        if (type == "v") {
-            glm::vec3 vertex;
-            iss >> vertex.x >> vertex.y >> vertex.z;
-            out_vertices.push_back(vertex);
-        } else if (type == "f") {
-            std::string lineHeader;
-            Face face;
-            while (iss >> lineHeader)
-            {
-                std::istringstream tokenstream(lineHeader);
-                std::string token;
-                std::array<int, 3> vertexIndices;
+    loadOBJ("/Users/jime/Uvgcoding/graphics/L4-GS/models/sphere.obj", vertices, normals, texCoords, faces);
+    /* loadTexture("models/diablo3.png"); */
 
-                // Read all three values separated by '/'
-                for (int i = 0; i < 3; ++i) {
-                    std::getline(tokenstream, token, '/');
-                    vertexIndices[i] = std::stoi(token) - 1;
-                }
+    for (const auto& face : faces)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
+            // Get the vertex position
+            glm::vec3 vertexPosition = vertices[face.vertexIndices[i]];
 
-                face.vertexIndices.push_back(vertexIndices);
-            }
-            out_faces.push_back(face);
+            // Get the normal for the current vertex
+            glm::vec3 vertexNormal = normals[face.normalIndices[i]];
+
+            // Get the texture for the current vertex
+            glm::vec3 vertexTexture = texCoords[face.texIndices[i]];
+
+            // Add the vertex position and normal to the vertex array
+            vertexBufferObject.push_back(vertexPosition);
+            vertexBufferObject.push_back(vertexNormal);
+            vertexBufferObject.push_back(vertexTexture);
         }
     }
 
-    file.close();
-    return true;
-}
+    Uniforms uniforms;
 
-std::vector<glm::vec3> setupVertexArray(const std::vector<glm::vec3>& vertices, const std::vector<Face>& faces) {
-    std::vector<glm::vec3> vertexArray;
+    glm::mat4 model = glm::mat4(1);
+    glm::mat4 view = glm::mat4(1);
+    glm::mat4 projection = glm::mat4(1);
 
-    // For each face
-    for (const auto& face : faces) {
-        // For each vertex in the face
-        for (const auto& vertexIndices : face.vertexIndices) {
-            // Get the vertex position from the input array using the indices from the face
-            glm::vec3 vertexPosition = vertices[vertexIndices[0]];
+    glm::vec3 translationVector(0.0f, 0.0f, 0.0f);
+    float a = 45.0f;
+    glm::vec3 rotationAxis(0.0f, 1.0f, 0.0f); // Rotate around the Y-axis
+    glm::vec3 scaleFactor(1.0f, 1.0f, 1.0f);
 
-            // Add the vertex position to the vertex array
-            vertexArray.push_back(vertexPosition);
-        }
-    }
+    glm::mat4 translation = glm::translate(glm::mat4(1.0f), translationVector);
+    glm::mat4 scale = glm::scale(glm::mat4(1.0f), scaleFactor);
 
-    return vertexArray;
-}
+    // Initialize a Camera object
+    Camera camera;
+    camera.cameraPosition = glm::vec3(0.0f, 0.0f, 1.5f);
+    camera.targetPosition = glm::vec3(0.0f, 0.0f, 0.0f);
+    camera.upVector = glm::vec3(0.0f, 1.0f, 0.0f);
 
-int main(int argc, char** argv) {
-    SDL_Init(SDL_INIT_EVERYTHING);
+    // Projection matrix
+    float fovInDegrees = 45.0f;
+    float aspectRatio = static_cast<float>(SCREEN_WIDTH) / static_cast<float>(SCREEN_HEIGHT); // Assuming a screen resolution of 800x600
+    float nearClip = 0.1f;
+    float farClip = 100.0f;
+    uniforms.projection = glm::perspective(glm::radians(fovInDegrees), aspectRatio, nearClip, farClip);
 
-    SDL_Window* window = SDL_CreateWindow("life", 100, 100, WINDOW_WIDTH, WINDOW_HEIGHT, 0);
-
-    std::string currentPath = getCurrentPath();
-    std::string fileName = "/Users/jime/Uvgcoding/graphics/L4-GS/models/sphere.obj";
-    std::string filePath = fileName;
-
-    loadOBJ(filePath, vertices, faces);
-
-
-    std::vector<glm::vec3> vertexArray = setupVertexArray(vertices, faces);
-
-    renderer = SDL_CreateRenderer(
-            window,
-            -1,
-            SDL_RENDERER_ACCELERATED
-    );
+    uniforms.viewport = createViewportMatrix(SCREEN_WIDTH, SCREEN_HEIGHT);
+    Uint32 frameStart, frameTime;
+    std::string title = "FPS: ";
+    int speed = 10;
 
     bool running = true;
-    SDL_Event event;
-
-    std::vector<glm::vec3> vertexBufferObject = {
-            {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f},
-            {-0.87f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f},
-            {0.87f,  -0.5f, 0.0f}, {0.0f, 0.0f, 1.0f},
-
-            {0.0f, 1.0f,    -1.0f}, {1.0f, 1.0f, 0.0f},
-            {-0.87f, -0.5f, -1.0f}, {0.0f, 1.0f, 1.0f},
-            {0.87f,  -0.5f, -1.0f}, {1.0f, 0.0f, 1.0f}
-    };
-
     while (running) {
+        frameStart = SDL_GetTicks();
+
+        SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
-            if (event. type == SDL_KEYDOWN) {
+            if (event.type == SDL_KEYDOWN) {
                 switch (event.key.keysym.sym) {
-                    case SDLK_UP:
-                        break;
-                    case SDLK_DOWN:
-                        break;
                     case SDLK_LEFT:
+                        camera.cameraPosition.x += -speed;
                         break;
                     case SDLK_RIGHT:
+                        camera.cameraPosition.x += speed;
                         break;
-                    case SDLK_s:
+                    case SDLK_UP:
+                        camera.cameraPosition.y += -speed;
                         break;
-                    case SDLK_a:
+                    case SDLK_DOWN:
+                        camera.cameraPosition.y += speed;
                         break;
                 }
             }
         }
 
-        uniform.model = createModelMatrix();
-        uniform.view = createViewMatrix();
-        uniform.projection = createProjectionMatrix();
-        uniform.viewport = createViewportMatrix();
+        a += 1;
+        glm::mat4 rotation = glm::rotate(glm::mat4(90.0f), glm::radians(a), rotationAxis);
 
+        // Calculate the model matrix
+        uniforms.model = translation * rotation * scale;
 
-        clear();
+        // Create the view matrix using the Camera object
+        uniforms.view = glm::lookAt(
+                camera.cameraPosition, // The position of the camera
+                camera.targetPosition, // The point the camera is looking at
+                camera.upVector        // The up vector defining the camera's orientation
+        );
 
-        // Call our render function
-        render(vertexArray);
-        // point(10, 10, Color{255, 255, 255});
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        clearFramebuffer();
 
+        render(vertexBufferObject, uniforms);
 
+        renderBuffer(renderer);
 
+        frameTime = SDL_GetTicks() - frameStart;
 
-        // Present the frame buffer to the screen
-        SDL_RenderPresent(renderer);
-
-        // Delay to limit the frame rate
-        SDL_Delay(1000 / 60);
-        // Llama a la función para escribir el archivo BMP
-        writeBMP("zbuffer.bmp");
+        // Calculate frames per second and update window title
+        if (frameTime > 0) {
+            std::ostringstream titleStream;
+            titleStream << "FPS: " << 1000.0 / frameTime;  // Milliseconds to seconds
+            SDL_SetWindowTitle(window, titleStream.str().c_str());
+        }
     }
-
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

@@ -1,21 +1,20 @@
-#include <SDL.h>
+#pragma once
+#include <glm/glm.hpp>
 #include <iostream>
-#include "fragment.h"
 #include "color.h"
-#include "glm/glm.hpp"
-
+#include "fragment.h"
 
 // overload for Vertex
 void print(const Vertex& v) {
-    std::cout << "Vertex{" << std::endl;
-    std::cout << "  glm::vec3(" << v.position.x << ", " << v.position.y << ", " << v.position.z << ")" << std::endl;
-    std::cout << "  Color(" << static_cast<int>(v.color.r) << ", " << static_cast<int>(v.color.g) << ", " << static_cast<int>(v.color.b) << ")" << std::endl;
+    std::cout << "Vertex{";
+    std::cout << "(" << v.position.x << ", " << v.position.y << ", " << v.position.z << ")";
     std::cout << "}" << std::endl;
 }
 
-// overload for Color
-void print(const Color& v) {
-    std::cout << "Color(" << static_cast<int>(v.r) << ", " << static_cast<int>(v.g) << ", " << static_cast<int>(v.b) << ")" << std::endl;
+
+// overload for glm::vec2
+void print(const glm::vec2& v) {
+    std::cout << "glm::vec2(" << v.x << ", " << v.y << ")" << std::endl;
 }
 
 // overload for glm::vec3
@@ -23,9 +22,26 @@ void print(const glm::vec3& v) {
     std::cout << "glm::vec3(" << v.x << ", " << v.y << ", " << v.z << ")" << std::endl;
 }
 
+// overload for glm::vec4
+void print(const glm::vec4& v) {
+    std::cout << "glm::vec4(" << v.x << ", " << v.y << ", " << v.z << ", " << v.w << ")" << std::endl;
+}
+
 // overload for glm::ivec2
 void print(const glm::ivec2& v) {
     std::cout << "glm::vec2(" << v.x << ", " << v.y << ")" << std::endl;
+}
+
+// overload for Color
+void print(const Color& c) {
+    std::cout << "Color("
+        << static_cast<int>(c.r) 
+        << ", "
+        << static_cast<int>(c.g) 
+        << ", "
+        << static_cast<int>(c.b) 
+        << ")"
+    << std::endl;
 }
 
 // overload for glm::mat4
@@ -44,16 +60,27 @@ void print(const glm::mat4& m) {
     std::cout << ")" << std::endl;
 }
 
-// base case function to end the recursion, using abbreviated template syntax
-void print(auto last) {
-    std::cout << last << '\n';
+// empty function to print newlines
+inline void print() {
+    std::cout << std::endl;
+}
+
+// base case function to end the recursion
+inline void print(auto one, bool last = true) {
+    std::cout << one;
+    if (last) {
+        std::cout << std::endl;
+    }
 }
 
 // recursive variadic template function
-template <typename T, typename... Args>
-void print(T first, Args... args) {
-    print(first);  // call the appropriate print function
-    if(sizeof...(args) > 0)
+inline void print(auto first, auto... args) {
+    print(first, false);  // call the appropriate print function
+
+    if constexpr (sizeof...(args) > 0) {
         std::cout << ' ';  // print a space only if there are more arguments
-    print(args...);  // call print with remaining arguments
+        print(args...);    // call print with remaining arguments
+    } else {
+        std::cout << std::endl;
+    }
 }
