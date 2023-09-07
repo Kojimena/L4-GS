@@ -80,7 +80,7 @@ void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms) {
 
     // 4. Fragment Shader
     for (size_t i = 0; i < fragments.size(); ++i) {
-        const Fragment& fragment = fragmentShader(fragments[i]);
+        const Fragment& fragment = landShader(fragments[i]);
         point(fragment);
     }
 }
