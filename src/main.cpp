@@ -143,11 +143,12 @@ int main(int argc, char* argv[]) {
     glm::vec3 scaleFactor(1.0f, 1.0f, 1.0f);
 
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), translationVector);
+
     glm::mat4 scale = glm::scale(glm::mat4(1.0f), scaleFactor);
 
     // Initialize a Camera object
     Camera camera;
-    camera.cameraPosition = glm::vec3(0.0f, 0.0f, 1.5f);
+    camera.cameraPosition = glm::vec3(0.0f, 0.0f, 2.0f);
     camera.targetPosition = glm::vec3(0.0f, 0.0f, 0.0f);
     camera.upVector = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -191,10 +192,11 @@ int main(int argc, char* argv[]) {
         }
 
         a += 1;
-        glm::mat4 rotation = glm::rotate(glm::mat4(90.0f), glm::radians(a), rotationAxis);
+        glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(a), rotationAxis);
 
         // Calculate the model matrix
         uniforms.model = translation * rotation * scale;
+
 
         // Create the view matrix using the Camera object
         uniforms.view = glm::lookAt(
