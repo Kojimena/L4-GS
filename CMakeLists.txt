@@ -3,7 +3,7 @@ project(L4_GS)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_executable(L4_GS src/main.cpp src/ObjLoader.cpp)
+add_executable(L4_GS src/main.cpp src/ObjLoader.cpp src/model.h)
 
 # Enable C++20 features
 set(CMAKE_CXX_STANDARD 20)
