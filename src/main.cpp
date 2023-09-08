@@ -236,7 +236,7 @@ int main(int argc, char* argv[]) {
         Model model2;
         model2.modelMatrix = glm::mat4(1);
         model2.vertices = vertexBufferObject;
-        model2.currentShader = currentShader;
+        model2.currentShader = STARS;
         model2.uniforms = uniforms;
         model2.uniforms.model = glm::translate(model2.uniforms.model, glm::vec3(1.5f, 0.0f, 0.0f))
                                 * glm::scale(model2.uniforms.model, glm::vec3(0.2f, 0.2f, 0.2f));
