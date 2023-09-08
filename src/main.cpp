@@ -49,7 +49,17 @@ void setColor(const Color& color) {
     currentColor = color;
 }
 
-void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms) {
+enum ShaderType {
+    GREENE,
+    GAS,
+    SUN,
+    LAND,
+    BALL,
+    NEON
+};
+
+
+void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms, ShaderType currentShader) {
     // 1. Vertex Shader
     std::vector<Vertex> transformedVertices(VBO.size() / 3);
     for (size_t i = 0; i < VBO.size() / 3; ++i) {
@@ -80,7 +90,33 @@ void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms) {
 
     // 4. Fragment Shader
     for (size_t i = 0; i < fragments.size(); ++i) {
-        const Fragment& fragment = landShader(fragments[i]);
+        Fragment (*fragmentShader)(Fragment&) = nullptr;
+
+        switch (currentShader) {
+            case GREENE:
+                fragmentShader = greeneShader;
+                break;
+            case GAS:
+                fragmentShader = gasShader; // Asumiendo que tienes una función llamada gasShader
+                break;
+            case SUN:
+                fragmentShader = sunShader; // Asumiendo que tienes una función llamada sunShader
+                break;
+            case LAND:
+                fragmentShader = landShader; // Asumiendo que tienes una función llamada landShader
+                break;
+            case BALL:
+                fragmentShader = ballShader; // Asumiendo que tienes una función llamada landShader
+                break;
+            case NEON:
+                fragmentShader = neonShader; // Asumiendo que tienes una función llamada landShader
+                break;
+            default:
+                std::cerr << "Error: Shader no reconocido." << std::endl;
+                break;
+        }
+        const Fragment& fragment = fragmentShader(fragments[i]);
+
         point(fragment);
     }
 }
@@ -98,6 +134,9 @@ glm::mat4 createViewportMatrix(size_t screenWidth, size_t screenHeight) {
 }
 
 int main(int argc, char* argv[]) {
+
+    ShaderType currentShader = GREENE;
+
     if (!init()) {
         return 1;
     }
@@ -148,7 +187,7 @@ int main(int argc, char* argv[]) {
 
     // Initialize a Camera object
     Camera camera;
-    camera.cameraPosition = glm::vec3(0.0f, 0.0f, 2.0f);
+    camera.cameraPosition = glm::vec3(0.0f, 0.0f, 3.0f);
     camera.targetPosition = glm::vec3(0.0f, 0.0f, 0.0f);
     camera.upVector = glm::vec3(0.0f, 1.0f, 0.0f);
 
@@ -173,8 +212,15 @@ int main(int argc, char* argv[]) {
             if (event.type == SDL_QUIT) {
                 running = false;
             }
+            // Renderizar la tierra
+            render(vertexBufferObject, uniforms, currentShader);
+            
             if (event.type == SDL_KEYDOWN) {
                 switch (event.key.keysym.sym) {
+                    case SDLK_SPACE:
+                        currentShader = static_cast<ShaderType>((currentShader + 1) % 6);
+                        std::cout << "Shader: " << currentShader << std::endl;
+                        break;
                     case SDLK_LEFT:
                         camera.cameraPosition.x += -speed;
                         break;
@@ -209,7 +255,8 @@ int main(int argc, char* argv[]) {
         SDL_RenderClear(renderer);
         clearFramebuffer();
 
-        render(vertexBufferObject, uniforms);
+        render(vertexBufferObject, uniforms, currentShader);
+
 
         renderBuffer(renderer);
 
@@ -222,6 +269,7 @@ int main(int argc, char* argv[]) {
             SDL_SetWindowTitle(window, titleStream.str().c_str());
         }
     }
+
 
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
