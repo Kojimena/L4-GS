@@ -147,7 +147,7 @@ int main(int argc, char* argv[]) {
     std::vector<Face> faces;
     std::vector<glm::vec3> vertexBufferObject; // This will contain both vertices and normals
 
-    loadOBJ("/Users/jime/Uvgcoding/graphics/L4-GS/models/sphere.obj", vertices, normals, texCoords, faces);
+    loadOBJ("../models/sphere.obj", vertices, normals, texCoords, faces);
 
     for (const auto& face : faces)
     {
@@ -231,7 +231,6 @@ int main(int argc, char* argv[]) {
         model1.currentShader = currentShader;
         models.push_back(model1); // Add model1 to models vector
 
-
         // Model 2: smaller and placed next to the first model
         Model model2;
         model2.modelMatrix = glm::mat4(1);
@@ -241,6 +240,7 @@ int main(int argc, char* argv[]) {
         model2.uniforms.model = glm::translate(model2.uniforms.model, glm::vec3(1.5f, 0.0f, 0.0f))
                                 * glm::scale(model2.uniforms.model, glm::vec3(0.2f, 0.2f, 0.2f));
         models.push_back(model2); // Add model2 to models vector
+
 
 
         SDL_Event event;
