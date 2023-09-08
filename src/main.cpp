@@ -55,7 +55,8 @@ enum ShaderType {
     SUN,
     LAND,
     BALL,
-    NEON
+    NEON,
+    STARS
 };
 
 
@@ -110,6 +111,9 @@ void render(const std::vector<glm::vec3>& VBO, const Uniforms& uniforms, ShaderT
                 break;
             case NEON:
                 fragmentShader = neonShader; // Asumiendo que tienes una función llamada landShader
+                break;
+            case STARS:
+                fragmentShader = starShaders; // Asumiendo que tienes una función llamada landShader
                 break;
             default:
                 std::cerr << "Error: Shader no reconocido." << std::endl;
@@ -214,11 +218,11 @@ int main(int argc, char* argv[]) {
             }
             // Renderizar la tierra
             render(vertexBufferObject, uniforms, currentShader);
-            
+
             if (event.type == SDL_KEYDOWN) {
                 switch (event.key.keysym.sym) {
                     case SDLK_SPACE:
-                        currentShader = static_cast<ShaderType>((currentShader + 1) % 6);
+                        currentShader = static_cast<ShaderType>((currentShader + 1) % 7);
                         std::cout << "Shader: " << currentShader << std::endl;
                         break;
                     case SDLK_LEFT:
